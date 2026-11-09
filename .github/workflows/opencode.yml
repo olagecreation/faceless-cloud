@@ -1,0 +1,23 @@
+name: OpenCode Free API Pipeline
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  opencode_run:
+    if: contains(github.event.comment.body, '/opencode') || contains(github.event.comment.body, '/oc')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v6
+
+      - name: Execute OpenCode
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.FREE_LLM_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: "openrouter/meta-llama/llama-3.3-70b-instruct:free"
+          use_github_token: true
