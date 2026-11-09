@@ -19,5 +19,5 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.FREE_LLM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          model: "openrouter/meta-llama/llama-3.3-70b-instruct"
+          model: "meta-llama/llama-3.3-70b-instruct"
 
