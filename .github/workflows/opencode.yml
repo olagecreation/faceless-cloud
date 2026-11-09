@@ -18,7 +18,7 @@ jobs:
         env:
           OPENCODE_API_KEY: ${{ secrets.FREE_LLM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENCODE_API_BASE: "https://openrouter.ai/api/v1"
+          OPENCODE_API_BASE: "https://openrouter.ai"
         with:
-          model: "openrouter/free"
+          model: "openrouter/auto"
           use_github_token: true
