@@ -20,5 +20,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENCODE_API_BASE: "https://openrouter.ai"
         with:
-          model: "openrouter/auto"
+          model: "meta-llama/llama-3.3-70b-instruct"
           use_github_token: true
