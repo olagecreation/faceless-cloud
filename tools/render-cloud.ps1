@@ -1,4 +1,4 @@
-# render-cloud.ps1 — send a render job to GitHub Actions, wait, download the MP4.
+# render-cloud.ps1 - send a render job to GitHub Actions, wait, download the MP4.
 # Usage:
 #   tools\render-cloud.ps1 -Script my-script.json [-Title "My Video"] [-Style inside-out] [-Voice am_michael]
 #                          [-Speed 1.0] [-Music bed] [-Fps 30] [-TempHost] [-Project <committed-name>]
@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
 $tokenFile = Join-Path $root "token.enc"
-if (-not (Test-Path $tokenFile)) { Write-Error "token.enc not found next to tools\ — run first-time setup."; exit 1 }
+if (-not (Test-Path $tokenFile)) { Write-Error "token.enc not found next to tools\ - run first-time setup."; exit 1 }
 $sec = ConvertTo-SecureString (Get-Content $tokenFile -Raw)
 $token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 $h = @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json" }
