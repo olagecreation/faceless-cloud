@@ -2,7 +2,7 @@
 # Usage:
 #   tools\render-cloud.ps1 -Script my-script.json [-Title "My Video"] [-Style inside-out] [-Voice am_michael]
 #                          [-Speed 1.0] [-Music bed] [-Fps 30] [-TempHost] [-Project <committed-name>]
-# Requires: token.txt next to this script (created during first-time setup).
+# Requires: token.enc next to this script (DPAPI-encrypted; only this Windows account can decrypt).
 param(
   [string]$Script,
   [string]$Project,
@@ -18,9 +18,10 @@ param(
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
-$tokenFile = Join-Path $root "token.txt"
-if (-not (Test-Path $tokenFile)) { Write-Error "token.txt not found next to tools\ — run first-time setup."; exit 1 }
-$token = (Get-Content $tokenFile -Raw).Trim()
+$tokenFile = Join-Path $root "token.enc"
+if (-not (Test-Path $tokenFile)) { Write-Error "token.enc not found next to tools\ — run first-time setup."; exit 1 }
+$sec = ConvertTo-SecureString (Get-Content $tokenFile -Raw)
+$token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 $h = @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json" }
 $repo = "olagecreation/faceless-cloud"
 
