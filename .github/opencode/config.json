@@ -1,0 +1,13 @@
+{
+  "providers": {
+    "openrouter": {
+      "type": "openai",
+      "baseURL": "https://openrouter.ai",
+      "fallbackModels": [
+        "openrouter/qwen/qwen-2.5-72b-instruct:free",
+        "openrouter/google/gemini-2.5-flash:free",
+        "openrouter/deepseek/deepseek-chat:free"
+      ]
+    }
+  }
+}
