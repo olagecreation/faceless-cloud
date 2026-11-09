@@ -1,14 +1,53 @@
 name: render
+
 on:
   workflow_dispatch:
     inputs:
       project:
-        description: "Project folder name under projects/"
-        required: true
+        description: "Existing committed project name under projects/ (leave empty to render from script_json)"
+        required: false
+        default: ""
+      script_json:
+        description: "Full script.json content (title, lines, caps...). Used when 'project' is empty"
+        required: false
+        default: ""
+      style:
+        description: "Style template to start from when rendering script_json"
+        required: false
+        default: "inside-out"
+        type: choice
+        options:
+          - inside-out
+          - deep-dive
+          - night-file
+          - stick-story
+          - paper-atlas
+          - tall-tale
+      voice:
+        description: "Kokoro voice id (am_michael, am_puck, af_heart, ...)"
+        required: false
+        default: "am_michael"
+      speed:
+        description: "Speech speed multiplier (1.0 = normal)"
+        required: false
+        default: "1.0"
+      music:
+        description: "Music: bed (built-in), none, or nothing else for now"
+        required: false
+        default: "bed"
+        type: choice
+        options:
+          - bed
+          - none
       fps:
-        description: "Render FPS (default 30)"
+        description: "Render FPS (lower = faster)"
         required: false
         default: "30"
+      temp_host:
+        description: "Also upload the finished video to a temporary share host and print the link (video is public while it lasts)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   render:
@@ -25,13 +64,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: ffmpeg
+      - name: Tool check (ffmpeg + chrome)
         run: |
-          command -v ffmpeg || { sudo apt-get update && sudo apt-get install -y ffmpeg; }
+          command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
           ffmpeg -version | head -1
-
-      - name: Chrome present?
-        run: |
           CH=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
           [ -n "$CH" ] || { echo "no chrome on runner"; exit 1; }
           echo "Chrome: $CH"
@@ -50,25 +86,91 @@ jobs:
           "$HOME/.faceless-shorts/venv/bin/pip" install -q numpy scipy kokoro-onnx faster-whisper
           "$HOME/.faceless-shorts/venv/bin/python" -c "import numpy, scipy, kokoro_onnx, faster_whisper; print('env ok')"
 
-      - name: Voice + word timing + mix + render
+      - name: Prepare project
+        id: prep
         run: |
-          FH="$HOME/.faceless-shorts"
-          PY="$FH/venv/bin/python"
-          PROJ="projects/${{ inputs.project }}"
-          [ -d "$PROJ" ] || { echo "project $PROJ not found"; exit 1; }
-          # fresh render dir
-          mkdir -p "$PROJ/renders" "$PROJ/review"
-          rm -f "$PROJ/data/narration.wav" "$PROJ/data/mix.wav"
-          "$PY" scripts/voice.py "$PROJ"
-          "$PY" scripts/words.py "$PROJ"
-          (cd "$PROJ" && node tools/capture.mjs check)
-          (cd "$PROJ" && node tools/capture.mjs cues)
-          (cd "$PROJ" && "$PY" tools/mix.py .)
-          (cd "$PROJ" && node tools/capture.mjs "video" "renders/video.mp4")
-          ls -la "$PROJ/renders"
+          set -e
+          PROJ="${{ inputs.project }}"
+          if [ -z "$PROJ" ]; then
+            [ -n "${{ inputs.script_json }}" ] || { echo "::error::either 'project' or 'script_json' input is required"; exit 1; }
+            PROJ="render-$(date +%s)"
+            cp -r "styles/${{ inputs.style }}/example" "projects/$PROJ"
+            printf '%s' "${{ inputs.script_json }}" > "projects/$PROJ/script.json"
+          else
+            [ -d "projects/$PROJ" ] || { echo "::error::project '$PROJ' not found under projects/"; exit 1; }
+          fi
+          PY="$HOME/.faceless-shorts/venv/bin/python"
+          "$PY" tools/apply_overrides.py "projects/$PROJ" "${{ inputs.voice }}" "${{ inputs.speed }}" "${{ inputs.music }}"
+          mkdir -p "projects/$PROJ/renders" "projects/$PROJ/review"
+          rm -f "projects/$PROJ/data/narration.wav" "projects/$PROJ/data/mix.wav"
+          echo "proj=$PROJ" >> "$GITHUB_OUTPUT"
+
+      - name: Voice + word timing
+        run: |
+          PY="$HOME/.faceless-shorts/venv/bin/python"
+          "$PY" scripts/voice.py "projects/${{ steps.prep.outputs.proj }}"
+          "$PY" scripts/words.py "projects/${{ steps.prep.outputs.proj }}"
+
+      - name: Sanity check + cues
+        run: |
+          cd "projects/${{ steps.prep.outputs.proj }}"
+          node tools/capture.mjs check
+          node tools/capture.mjs cues
+
+      - name: Mix sound
+        run: |
+          PY="$HOME/.faceless-shorts/venv/bin/python"
+          cd "projects/${{ steps.prep.outputs.proj }}"
+          "$PY" tools/mix.py .
+
+      - name: Render video
+        run: |
+          cd "projects/${{ steps.prep.outputs.proj }}"
+          node tools/capture.mjs "video" "renders/video.mp4"
+          ls -la renders
+
+      - name: QA contact sheet
+        run: |
+          cd "projects/${{ steps.prep.outputs.proj }}"
+          node tools/capture.mjs sheet review/all.jpg 0.5 10 || echo "sheet skipped (not fatal)"
+
+      - name: Optional temp-host link
+        id: host
+        if: inputs.temp_host == true
+        run: |
+          URL=$(curl -s -F "reqtype=fileupload" -F "time=24h" -F "fileToUpload=@projects/${{ steps.prep.outputs.proj }}/renders/video.mp4" https://litterbox.catbox.moe/resources/internals/api.php)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "watch link: $URL"
+
+      - name: Job summary
+        run: |
+          PROJ="projects/${{ steps.prep.outputs.proj }}"
+          DUR=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$PROJ/renders/video.mp4" 2>/dev/null || echo "?")
+          {
+            echo "## Render complete 🎬"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Project | \`${{ steps.prep.outputs.proj }}\` |"
+            echo "| Mode | ${{ inputs.project && 'committed project' || 'script from run form' }} |"
+            echo "| Style / voice | ${{ inputs.style }} / ${{ inputs.voice }} @ ${{ inputs.speed }}x |"
+            echo "| Duration | ${DUR}s |"
+            if [ -n "${{ steps.host.outputs.url }}" ]; then echo "| Watch link (24 h) | ${{ steps.host.outputs.url }} |"; fi
+            echo ""
+            echo "Download the MP4 and the QA contact sheet from this run's **Artifacts** section."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload video
         uses: actions/upload-artifact@v4
         with:
-          name: video-${{ inputs.project }}
-          path: projects/${{ inputs.project }}/renders/video.mp4
+          name: video-${{ steps.prep.outputs.proj }}
+          path: projects/${{ steps.prep.outputs.proj }}/renders/video.mp4
+
+      - name: Upload QA sheet + timing data
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-${{ steps.prep.outputs.proj }}
+          path: |
+            projects/${{ steps.prep.outputs.proj }}/review/
+            projects/${{ steps.prep.outputs.proj }}/data/lines.json
+            projects/${{ steps.prep.outputs.proj }}/data/words.json
