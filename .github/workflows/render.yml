@@ -1,0 +1,74 @@
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Project folder name under projects/"
+        required: true
+      fps:
+        description: "Render FPS (default 30)"
+        required: false
+        default: "30"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: ffmpeg
+        run: |
+          command -v ffmpeg || { sudo apt-get update && sudo apt-get install -y ffmpeg; }
+          ffmpeg -version | head -1
+
+      - name: Chrome present?
+        run: |
+          CH=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
+          [ -n "$CH" ] || { echo "no chrome on runner"; exit 1; }
+          echo "Chrome: $CH"
+
+      - name: Cache voice + whisper models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.faceless-shorts/kokoro
+            ~/.cache/huggingface
+          key: faceless-models-v1
+
+      - name: Python env
+        run: |
+          python -m venv "$HOME/.faceless-shorts/venv"
+          "$HOME/.faceless-shorts/venv/bin/pip" install -q numpy scipy kokoro-onnx faster-whisper
+          "$HOME/.faceless-shorts/venv/bin/python" -c "import numpy, scipy, kokoro_onnx, faster_whisper; print('env ok')"
+
+      - name: Voice + word timing + mix + render
+        run: |
+          FH="$HOME/.faceless-shorts"
+          PY="$FH/venv/bin/python"
+          PROJ="projects/${{ inputs.project }}"
+          [ -d "$PROJ" ] || { echo "project $PROJ not found"; exit 1; }
+          # fresh render dir
+          mkdir -p "$PROJ/renders" "$PROJ/review"
+          rm -f "$PROJ/data/narration.wav" "$PROJ/data/mix.wav"
+          "$PY" scripts/voice.py "$PROJ"
+          "$PY" scripts/words.py "$PROJ"
+          (cd "$PROJ" && node tools/capture.mjs check)
+          (cd "$PROJ" && node tools/capture.mjs cues)
+          (cd "$PROJ" && "$PY" tools/mix.py .)
+          (cd "$PROJ" && node tools/capture.mjs "video" "renders/video.mp4")
+          ls -la "$PROJ/renders"
+
+      - name: Upload video
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ inputs.project }}
+          path: projects/${{ inputs.project }}/renders/video.mp4
