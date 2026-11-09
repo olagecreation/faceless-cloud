@@ -18,6 +18,7 @@ jobs:
         env:
           OPENCODE_API_KEY: ${{ secrets.FREE_LLM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_API_BASE: "https://openrouter.ai"
         with:
-          model: "meta-llama/llama-3.3-70b-instruct"
-
+          model: "meta-llama/llama-3.3-70b-instruct:free"
+          use_github_token: true
